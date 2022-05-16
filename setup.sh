@@ -1,4 +1,5 @@
 #!/bin/bash
+DOCKER_BUILD_KIT=1
 
 as_sudo(){
     cmd="sudo bash -c '$@'"
