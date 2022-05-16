@@ -1,0 +1,15 @@
+services:
+  tspp:
+    build:
+      args:
+        - FROM_IMAGE_NAME=nvcr.io/nvidia/pytorch:21.09-py3
+      context: submodules/DeepLearningExamples/Tools/PyTorch/TimeSeriesPredictionPlatform/
+      dockerfile: Dockerfile
+    image: nvcr.io/nvidian/sae/tspp:v1.0.0
+  analytics:
+    build:
+      args:
+        - FROM_IMAGE_NAME=nvcr.io/nvidia/rapidsai/rapidsai:22.04-cuda11.5-base-ubuntu20.04
+      context: analytics
+      dockerfile: Dockerfile
+    image: nvcr.io/nvidian/sae/tspp:v1.0.0-analytics

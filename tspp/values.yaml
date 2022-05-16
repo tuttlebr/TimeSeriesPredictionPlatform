@@ -1,0 +1,160 @@
+# Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#  * Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#  * Neither the name of NVIDIA CORPORATION nor the names of its
+#    contributors may be used to endorse or promote products derived
+#    from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+tags:
+  # Autoscaling will enable horizontal pod autoscaling based on the custom
+  # Prometheus metric avg_time_queue_us.
+  autoscaling: false
+  # Loadbalancing will enable the Traefik loadbalancer as a service, this
+  # also has optional load balancing specs.
+  loadBalancing: false
+
+global:
+  ngcCredentials:
+    registry: nvcr.io
+    username: $oauthtoken
+    password:
+    email:
+  image:
+    repository: nvcr.io/nvidian/sae/tspp
+    pullPolicy: Always
+    tag: "v1.0.0"
+    imagePullSecret: imagepullsecret
+  datasetName: electricity
+  model: tft
+  criterion: quantile
+  persistentVolumeClaim:
+    name: tspp
+    accessMode: ReadWriteMany
+    storage: 64Gi
+
+preprocessData:
+  start: false
+  affinity: ""
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+
+trainModel:
+  start: false
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: nvidia.com/gpu.count
+                operator: In
+                values:
+                  - "2"
+                  - "4"
+                  - "8"
+  command:
+    - python
+    - -m
+    - torch.distributed.run
+    - --nproc_per_node=2
+    - launch_tspp.py
+    - amp=True
+    - criterion=quantile
+    - dataset=electricity
+    - device=cuda
+    - model=tft
+    - config.device.world_size=2
+    - config.trainer.num_epochs=2
+  env:
+    - name: DGLBACKEND
+      value: "pytorch"
+    - name: HYDRA_FULL_ERROR
+      value: "1"
+    - name: OMP_NUM_THREADS
+      value: "16"
+  resources:
+    limits:
+      nvidia.com/gpu: 2
+  world_size: 2
+
+convertModel:
+  start: false
+  command:
+    - python
+    - /workspace/launch_deployment.py
+    - export=ts-trace
+    - convert=torchscript
+    - config.inference.optimize=False
+    - config.inference.skip_conversion=True
+    - config.inference.just_deploy=True
+    - config.evaluator.checkpoint=/workspace/outputs/2022-05-16/15-27-09/
+
+deployModel:
+  start: true
+  tritonImage: nvcr.io/nvidia/tritonserver:21.09-py3
+  command:
+    - tritonserver
+    - --model-store=/workspace/outputs/2022-05-16/15-27-09/deployment/navigator_workspace/model-store/
+    - --log-verbose=1
+    - --exit-on-error=true
+    - --strict-model-config=false
+  replicas: 1
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+  device: gpu
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: nvidia.com/gpu.count
+                operator: In
+                values:
+                  - "2"
+                  - "4"
+                  - "8"
+
+analytics:
+  start: true
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: nvidia.com/gpu.count
+                operator: NotIn
+                values:
+                  - "2"
+                  - "4"
+                  - "8"
+  resources:
+    requests:
+      memory: "8Gi"
+      cpu: "2500m"
+      nvidia.com/gpu: 1
+    limits:
+      memory: "16Gi"
+      cpu: "5000m"
+      nvidia.com/gpu: 1
+  tensorboardNodePort: 30006
+  vsCodeNodePort: 30007
