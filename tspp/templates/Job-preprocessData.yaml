@@ -37,8 +37,8 @@ metadata:
     release: {{ .Release.Name }}
     type: {{ template "tspp.fullname" . }}-data
 spec:
-  suspend: true
-  completions: 1
+  # suspend: true
+  # completions: 1
   ttlSecondsAfterFinished: 0
   template:
     metadata:
@@ -67,6 +67,8 @@ spec:
           env:
             - name: DGLBACKEND
               value: "pytorch"
+            # - name: NUMEXPR_MAX_THREADS
+            #   value: "8"
           volumeMounts:
             - name: tspp-volume
               mountPath: /workspace/datasets
@@ -77,7 +79,7 @@ spec:
       imagePullSecrets:
         - name: imagepullsecret
       initContainers:
-        - name: 00-init-tspp-data
+        - name: init-tspp-data
           image: "{{ .Values.global.image.repository }}:{{ .Values.global.image.tag }}"
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           command:
@@ -92,9 +94,9 @@ spec:
             - name: tspp-volume
               mountPath: /workspace/datasets
               subPath: datasets
-            - name: tspp-volume
-              mountPath: /workspace/conf/dataset
-              subPath: conf/dataset
+            # - name: tspp-volume
+            #   mountPath: /workspace/conf/dataset
+            #   subPath: conf/dataset
       volumes:
         - name: tspp-volume
           persistentVolumeClaim:
