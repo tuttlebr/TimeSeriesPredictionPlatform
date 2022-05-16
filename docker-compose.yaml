@@ -9,7 +9,7 @@ services:
   analytics:
     build:
       args:
-        - FROM_IMAGE_NAME=nvcr.io/nvidia/rapidsai/rapidsai:22.02-cuda11.5-base-ubuntu20.04
-      context: analytics
-      dockerfile: Dockerfile
+        - FROM_IMAGE_NAME=nvcr.io/nvidia/pytorch:21.12-py3
+      context: .
+      dockerfile: analytics/Dockerfile
     image: nvcr.io/nvidian/sae/tspp:v1.0.0-analytics
