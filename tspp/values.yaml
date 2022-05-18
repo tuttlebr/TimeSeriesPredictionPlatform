@@ -23,36 +23,45 @@
 # OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-tags:
-  # Autoscaling will enable horizontal pod autoscaling based on the custom
-  # Prometheus metric avg_time_queue_us.
-  autoscaling: false
-  # Loadbalancing will enable the Traefik loadbalancer as a service, this
-  # also has optional load balancing specs.
-  loadBalancing: false
-
-global:
-  ngcCredentials:
-    registry: nvcr.io
-    username: $oauthtoken
-    password:
-    email:
-  image:
-    repository: nvcr.io/nvidian/sae/tspp
-    pullPolicy: Always
-    tag: "v1.0.0"
-    imagePullSecret: imagepullsecret
-  datasetName: traffic
-  model: tft
-  criterion: quantile
-  persistentVolumeClaim:
-    name: tspp
-    accessMode: ReadWriteMany
-    storage: 64Gi
-
-preprocessData:
+analytics:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: nvidia.com/gpu.count
+                operator: NotIn
+                values:
+                  - "2"
+                  - "4"
+                  - "8"
+  resources:
+    limits:
+      cpu: 5000m
+      memory: 16Gi
+      nvidia.com/gpu: 1
+    requests:
+      cpu: 2500m
+      memory: 8Gi
+      nvidia.com/gpu: 1
   start: true
+  tensorboardNodePort: 30006
+  vsCodeNodePort: 30007
+convertModel:
+  command:
+    - python
+    - triton/export_model.py
+    - --input-path=triton/model.py
+    - --input-type=pyt
+    - --output-path=/workspace/outputs/2022-05-16/21-57-24/deployment/exported_model.pt
+    - --output-type=ts-trace
+    - --dataloader=triton/dataloader.py
+    - --batch-size=64
+    - --model-dir=/workspace/outputs/2022-05-16/21-57-24/
+    - --onnx-opset=13
+    - --ignore-unknown-parameters
+  start: false
+deployModel:
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
@@ -62,13 +71,63 @@ preprocessData:
                 operator: In
                 values:
                   - "1"
-
+                  - "2"
+                  - "4"
+                  - "8"
+  command:
+    - tritonserver
+    - --model-store=/workspace/outputs/2022-05-16/21-57-24/deployment/navigator_workspace/model-store/
+    - --log-verbose=1
+    - --exit-on-error=true
+    - --strict-model-config=false
+  device: gpu
+  modelPlanFile: /workspace/outputs/2022-05-16/21-57-24/deployment/navigator_workspace/model-store/tft_pyt/config.pbtxt
+  replicas: 1
   resources:
     limits:
       nvidia.com/gpu: 1
-
-trainModel:
   start: true
+  tritonImage: nvcr.io/nvidia/tritonserver:21.09-py3
+global:
+  criterion: quantile
+  datasetName: traffic
+  image:
+    imagePullSecret: imagepullsecret
+    pullPolicy: Always
+    repository: nvcr.io/nvidian/sae/tspp
+    tag: v1.0.0
+  model: tft
+  ngcCredentials:
+    email:
+    password:
+    registry: nvcr.io
+    username: $oauthtoken
+  persistentVolumeClaim:
+    accessMode: ReadWriteMany
+    name: tspp
+    storage: 64Gi
+preprocessData:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: nvidia.com/gpu.count
+                operator: In
+                values:
+                  - "1"
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+  start: false
+tags:
+  # Autoscaling will enable horizontal pod autoscaling based on the custom
+  # Prometheus metric avg_time_queue_us.
+  autoscaling: false
+  # Loadbalancing will enable the Traefik loadbalancer as a service, this
+  # also has optional load balancing specs.
+  loadBalancing: false
+trainModel:
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
@@ -92,10 +151,10 @@ trainModel:
     - device=cuda
     - model=tft
     - config.device.world_size=2
-    - config.trainer.num_epochs=2
+    - config.trainer.num_epochs=25
   env:
     - name: DGLBACKEND
-      value: "pytorch"
+      value: pytorch
     - name: HYDRA_FULL_ERROR
       value: "1"
     - name: OMP_NUM_THREADS
@@ -103,70 +162,5 @@ trainModel:
   resources:
     limits:
       nvidia.com/gpu: 2
+  start: false
   world_size: 2
-
-convertModel:
-  start: false
-  command:
-    - python
-    - /workspace/launch_deployment.py
-    - export=ts-trace
-    - convert=torchscript
-    - config.inference.optimize=False
-    - config.inference.skip_conversion=True
-    - config.inference.just_deploy=True
-    - config.evaluator.checkpoint=/workspace/outputs/2022-05-16/15-27-09/
-
-deployModel:
-  start: false
-  tritonImage: nvcr.io/nvidia/tritonserver:21.09-py3
-  modelPlanFile: /workspace/outputs/2022-05-16/15-27-09/deployment/navigator_workspace/model-store/tft_pyt/config.pbtxt
-  command:
-    - tritonserver
-    - --model-store=/workspace/outputs/2022-05-16/15-27-09/deployment/navigator_workspace/model-store/
-    - --log-verbose=1
-    - --exit-on-error=true
-    - --strict-model-config=false
-  replicas: 1
-  resources:
-    limits:
-      nvidia.com/gpu: 1
-  device: gpu
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-          - matchExpressions:
-              - key: nvidia.com/gpu.count
-                operator: In
-                values:
-                  - "1"
-                  - "2"
-                  - "4"
-                  - "8"
-
-analytics:
-  start: false
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-          - matchExpressions:
-              - key: nvidia.com/gpu.count
-                operator: NotIn
-                values:
-                  - "2"
-                  - "4"
-                  - "8"
-                   
-  resources:
-    requests:
-      memory: "8Gi"
-      cpu: "2500m"
-      nvidia.com/gpu: 1
-    limits:
-      memory: "16Gi"
-      cpu: "5000m"
-      nvidia.com/gpu: 1
-  tensorboardNodePort: 30006
-  vsCodeNodePort: 30007

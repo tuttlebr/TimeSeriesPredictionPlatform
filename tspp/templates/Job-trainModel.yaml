@@ -37,8 +37,6 @@ metadata:
     release: {{ .Release.Name }}
     type: {{ template "tspp.fullname" . }}-trainer
 spec:
-  # suspend: true # TODO: Would this be helpful?
-  ttlSecondsAfterFinished: 0
   template:
     metadata:
       labels:

@@ -37,7 +37,6 @@ metadata:
     release: {{ .Release.Name }}
     type: {{ template "tspp.fullname" . }}-convert
 spec:
-  ttlSecondsAfterFinished: 0
   template:
     metadata:
       labels:
